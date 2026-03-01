@@ -34,10 +34,19 @@ class AttentionMonitor:
         self.idx = 0
         self.janela_feedback = "Sua Camera"
         
-        # Setup VLC
-        self.instance = vlc.Instance("--quiet", "--no-video-title-show")
+        # Setup VLC com atalho de teclado para fechar (ESC)
+        vlc_flags = ["--quiet", "--no-video-title-show", "--no-xlib", "--key-quit=Esc"]
+        self.instance = vlc.Instance(*vlc_flags)
         self.player = self.instance.media_player_new()
         self.player.set_fullscreen(True)
+        
+        # Event Manager para detectar se o VLC foi fechado por tecla
+        self.event_manager = self.player.event_manager()
+        self.should_stop = False
+        def vlc_quit_event(event):
+            self.should_stop = True
+        self.event_manager.event_attach(vlc.EventType.MediaPlayerEndReached, vlc_quit_event)
+        self.event_manager.event_attach(vlc.EventType.MediaPlayerStopped, vlc_quit_event)
         
         # Variáveis de controle de tempo (para não pausar)
         self.last_video_time = 0 
@@ -153,7 +162,7 @@ class AttentionMonitor:
                         video_ativo = False
 
                 key = cv2.waitKey(1) & 0xFF
-                if key == ord('q') or key == 27: 
+                if key == ord('q') or key == 27 or self.should_stop: 
                     break
                 elif key == ord('c'):
                     self.proxima_camera()
