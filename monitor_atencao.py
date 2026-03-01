@@ -22,18 +22,17 @@ class AttentionMonitor:
         self.cap = None
         self.janela_feedback = "Sua Camera (Feedback)"
         
-        # Inicializa o VLC com flags de janelas flutuantes
+        # Inicializa o VLC
         self.instance = vlc.Instance("--quiet", "--no-video-title-show")
         self.player = self.instance.media_player_new()
 
     def download_video(self):
         if not os.path.exists(self.video_path):
-            print(f"[*] Baixando novo vídeo de alerta (V2)...")
+            print(f"[*] Preparando vídeo...")
             try:
                 req = urllib.request.Request(self.video_url, headers={'User-Agent': 'Mozilla/5.0'})
                 with urllib.request.urlopen(req) as response, open(self.video_path, 'wb') as out_file:
                     out_file.write(response.read())
-                print("[+] Download V2 concluído!")
             except Exception as e:
                 print(f"[!] Erro no download: {e}")
 
@@ -56,18 +55,17 @@ class AttentionMonitor:
         media = self.instance.media_new(self.video_path)
         self.player.set_media(media)
         
-        # Cria a janela de Feedback (Sua Camera)
+        # Janela de Feedback sempre ativa
         cv2.namedWindow(self.janela_feedback, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(self.janela_feedback, 320, 240)
         
-        # Garante que a camera fique no topo
         try:
             cv2.setWindowProperty(self.janela_feedback, cv2.WND_PROP_TOPMOST, 1)
         except:
             pass
         
-        print("\n[+] Monitoramento V2 iniciado!")
-        print("[>] O vídeo agora NÃO pausa quando você olha!")
+        print("\n[+] Monitoramento Inteligente Ativado!")
+        print("[>] O vídeo só aparecerá se você desviar o olhar.")
         
         video_ativo = False
         
@@ -85,7 +83,7 @@ class AttentionMonitor:
 
                 olhando = len(faces) > 0
 
-                # Feedback Visual da Camera
+                # Feedback Visual
                 frame_draw = frame.copy()
                 for (x, y, w, h) in faces:
                     x, y, w, h = x*2, y*2, w*2, h*2
@@ -105,16 +103,16 @@ class AttentionMonitor:
                         if not video_ativo:
                             self.player.play()
                             video_ativo = True
+                        
+                        if self.player.get_state() == vlc.State.Ended:
+                            self.player.stop()
+                            self.player.play()
                 else:
                     self.buffer_frames_perdidos = 0
-                    # NOTA: O vídeo NÃO para mais aqui quando você olha!
-                    # Ele continuará rodando até o fim ou até você fechar o script.
-                    pass
-
-                # Se o vídeo acabar, reinicia (loop infinito)
-                if self.player.get_state() == vlc.State.Ended:
-                    self.player.stop()
-                    self.player.play()
+                    if video_ativo:
+                        # PARA o vídeo e ESCONDE a janela imediatamente ao olhar
+                        self.player.stop()
+                        video_ativo = False
 
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord('q') or key == 27:
