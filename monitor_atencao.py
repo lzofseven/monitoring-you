@@ -2,12 +2,14 @@ import cv2
 import time
 import os
 import urllib.request
-import numpy as np
-import subprocess
+import vlc
 import sys
 
-# Silencia logs do sistema
+# Silencia logs chatos do sistema
+os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.qpa.*=false"
+os.environ["QT_QPA_PLATFORM"] = "xcb" 
 os.environ["OPENCV_LOG_LEVEL"] = "OFF"
+os.environ["VLC_VERBOSE"] = "-1"
 sys.stderr = open(os.devnull, 'w')
 
 VIDEO_URL = "https://i.imgur.com/pwRPAsT.mp4"
@@ -24,13 +26,13 @@ class AttentionMonitor:
         self.buffer_frames_perdidos = 0
         
         self.cap = None
-        self.video_cap = None
-        self.audio_process = None
-        self.janela_nome = "MONITOR_SISTEMA"
+        self.janela_feedback = "Sua Camera"
+        self.janela_video = "ALERTA_VIGILANTE"
         
-        # Sua resolução de tela
-        self.screen_w = 1366
-        self.screen_h = 768
+        # Setup do VLC (Sem interface e com som)
+        self.instance = vlc.Instance("--quiet", "--no-video-title-show")
+        self.player = self.instance.media_player_new()
+        self.player.set_fullscreen(True)
 
     def download_video(self):
         if not os.path.exists(self.video_path):
@@ -40,31 +42,24 @@ class AttentionMonitor:
                     out_file.write(response.read())
             except Exception: pass
 
-    def play_audio(self):
-        if self.audio_process is None:
-            # Toca apenas o áudio do vídeo em loop usando ffplay (nativo no Linux)
-            cmd = ["ffplay", "-nodisp", "-loop", "0", self.video_path]
-            self.audio_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-    def stop_audio(self):
-        if self.audio_process:
-            self.audio_process.terminate()
-            self.audio_process = None
-
     def run(self):
         self.download_video()
-        # Tenta indices de camera
+        # Inicia Camera
         for i in [1, 0, 2]:
             self.cap = cv2.VideoCapture(i)
             if self.cap.isOpened(): break
         
         if not self.cap: return
 
-        self.video_cap = cv2.VideoCapture(self.video_path)
+        media = self.instance.media_new(self.video_path)
+        self.player.set_media(media)
         
-        cv2.namedWindow(self.janela_nome, cv2.WND_PROP_FULLSCREEN)
-        cv2.setWindowProperty(self.janela_nome, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
-
+        # Cria a janelinha da camera
+        cv2.namedWindow(self.janela_feedback, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(self.janela_feedback, 320, 240)
+        
+        print("[+] Monitoramento Ativado (2 Janelas)")
+        
         video_ativo = False
         
         try:
@@ -76,7 +71,7 @@ class AttentionMonitor:
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 gray = cv2.equalizeHist(gray)
 
-                # Detecção Rígida
+                # Detecção Rigorosa (Rosto + Olhos)
                 faces = self.face_cascade.detectMultiScale(gray, 1.1, 6, minSize=(100, 100))
                 olhando = False
                 for (x, y, w, h) in faces:
@@ -88,47 +83,44 @@ class AttentionMonitor:
                             cv2.rectangle(frame[y:y+h//2, x:x+w], (ex, ey), (ex+ew, ey+eh), (255, 0, 0), 2)
                     cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
 
-                # Composição do Frame Final
+                # Exibe sempre a janelinha da câmera
+                cv2.imshow(self.janela_feedback, frame)
+                
+                # FORÇA a janelinha da câmera a ficar no topo ABSOLUTO (importante para não ser coberta)
+                try:
+                    cv2.setWindowProperty(self.janela_feedback, cv2.WND_PROP_TOPMOST, 1)
+                except: pass
+
                 if not olhando:
                     self.buffer_frames_perdidos += 1
                     if self.buffer_frames_perdidos >= self.frames_para_disparar:
-                        v_ret, v_frame = self.video_cap.read()
-                        if not v_ret:
-                            self.video_cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                            v_ret, v_frame = self.video_cap.read()
+                        if not video_ativo:
+                            self.player.play()
+                            video_ativo = True
                         
-                        display_frame = cv2.resize(v_frame, (self.screen_w, self.screen_h))
-                        self.play_audio()
-                        video_ativo = True
-                    else:
-                        display_frame = np.zeros((self.screen_h, self.screen_w, 3), dtype=np.uint8)
+                        # Se o vídeo acabar, reinicia
+                        if self.player.get_state() == vlc.State.Ended:
+                            self.player.stop()
+                            self.player.play()
                 else:
                     self.buffer_frames_perdidos = 0
-                    display_frame = np.zeros((self.screen_h, self.screen_w, 3), dtype=np.uint8)
                     if video_ativo:
-                        self.stop_audio()
+                        # PARA o vídeo e a janela some imediatamente
+                        self.player.stop()
                         video_ativo = False
-
-                # Adiciona a Câmera (PiP) no canto da imagem final
-                pip_h, pip_w = 180, 240
-                pip_small = cv2.resize(frame, (pip_w, pip_h))
-                # Sobrepõe no canto superior direito
-                display_frame[10:10+pip_h, self.screen_w-pip_w-10:self.screen_w-10] = pip_small
-
-                cv2.imshow(self.janela_nome, display_frame)
 
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord('q') or key == 27: break
-                elif key == ord('c'): # Troca de camera
+                elif key == ord('c'):
+                    # Troca de camera simples
                     idx = (i + 1) % 3
                     self.cap.release()
                     self.cap = cv2.VideoCapture(idx)
                     
         except KeyboardInterrupt: pass
         finally:
-            self.stop_audio()
             if self.cap: self.cap.release()
-            if self.video_cap: self.video_cap.release()
+            self.player.stop()
             cv2.destroyAllWindows()
 
 if __name__ == "__main__":
