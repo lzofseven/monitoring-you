@@ -81,10 +81,20 @@ class AttentionMonitor:
 
                 faces = self.face_cascade.detectMultiScale(gray, 1.1, 6, minSize=(100, 100))
                 olhando = False
+                
+                # Feedback Visual na Camera
                 for (x, y, w, h) in faces:
+                    cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
                     roi_gray = gray[y:y+h//2, x:x+w]
+                    roi_color = frame[y:y+h//2, x:x+w]
+                    
                     eyes = self.eye_cascade.detectMultiScale(roi_gray, 1.1, 10, minSize=(20, 20))
-                    if len(eyes) >= 2: olhando = True
+                    if len(eyes) >= 2:
+                        olhando = True
+                        for (ex, ey, ew, eh) in eyes:
+                            cv2.rectangle(roi_color, (ex, ey), (ex+ew, ey+eh), (255, 0, 0), 2)
+                            cv2.putText(frame, "OLHO DETECTADO", (x + ex, y + ey - 10), 
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1)
 
                 cv2.imshow(self.janela_feedback, frame)
                 try: cv2.setWindowProperty(self.janela_feedback, cv2.WND_PROP_TOPMOST, 1)
@@ -111,7 +121,9 @@ class AttentionMonitor:
                         video_ativo = False
 
                 key = cv2.waitKey(1) & 0xFF
-                if key == ord('q') or key == 27: break
+                # Se apertar ESC (27) ou Q, sai do script totalmente
+                if key == ord('q') or key == 27: 
+                    break
                     
         except KeyboardInterrupt: pass
         finally:
