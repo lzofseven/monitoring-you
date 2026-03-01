@@ -26,6 +26,8 @@ class AttentionMonitor:
         self.buffer_frames_perdidos = 0
         
         self.cap = None
+        self.camera_indices = [1, 0, 2, 3, 4]
+        self.idx = 0
         self.janela_feedback = "Sua Camera"
         
         # Setup VLC
@@ -34,9 +36,9 @@ class AttentionMonitor:
         self.player.set_fullscreen(True)
         
         # Variáveis de controle de tempo (para não pausar)
-        self.last_video_time = 0 # milissegundos
-        self.time_when_hidden = 0 # segundos do sistema
-        self.video_duration = 0 # milissegundos
+        self.last_video_time = 0 
+        self.time_when_hidden = 0 
+        self.video_duration = 0 
 
     def download_video(self):
         if not os.path.exists(self.video_path):
@@ -46,18 +48,34 @@ class AttentionMonitor:
                     out_file.write(response.read())
             except Exception: pass
 
+    def iniciar_camera(self, index):
+        if self.cap: self.cap.release()
+        cap = cv2.VideoCapture(index)
+        return cap if cap.isOpened() else None
+
+    def proxima_camera(self):
+        self.idx = (self.idx + 1) % len(self.camera_indices)
+        nova_cap = self.iniciar_camera(self.camera_indices[self.idx])
+        if nova_cap:
+            self.cap = nova_cap
+            return True
+        return False
+
     def run(self):
         self.download_video()
-        for i in [1, 0, 2]:
-            self.cap = cv2.VideoCapture(i)
-            if self.cap.isOpened(): break
+        # Inicia com a primeira da lista
+        self.cap = self.iniciar_camera(self.camera_indices[self.idx])
+        
+        if not self.cap:
+            # Tenta as outras se a primeira falhar
+            for _ in range(len(self.camera_indices)):
+                if self.proxima_camera(): break
         
         if not self.cap: return
 
         media = self.instance.media_new(self.video_path)
         self.player.set_media(media)
         
-        # Precisamos dar um play/stop rápido para o VLC ler a duração do arquivo
         self.player.play()
         time.sleep(0.5)
         self.video_duration = self.player.get_length()
@@ -66,14 +84,20 @@ class AttentionMonitor:
         cv2.namedWindow(self.janela_feedback, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(self.janela_feedback, 320, 240)
         
-        print("[+] Monitoramento Ativado (Vídeo em tempo real)")
+        sys.stdout.write("\n" + "="*40 + "\n")
+        sys.stdout.write(" MONITORAMENTO VIGILANTE ATIVADO \n")
+        sys.stdout.write("="*40 + "\n")
+        sys.stdout.write("[>] C: Trocar Camera | ESC/Q: Sair\n\n")
+        sys.stdout.flush()
         
         video_ativo = False
         
         try:
             while True:
                 ret, frame = self.cap.read()
-                if not ret: continue
+                if not ret:
+                    time.sleep(0.01)
+                    continue
 
                 frame = cv2.flip(frame, 1)
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -82,7 +106,6 @@ class AttentionMonitor:
                 faces = self.face_cascade.detectMultiScale(gray, 1.1, 6, minSize=(100, 100))
                 olhando = False
                 
-                # Feedback Visual na Camera
                 for (x, y, w, h) in faces:
                     cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
                     roi_gray = gray[y:y+h//2, x:x+w]
@@ -96,6 +119,7 @@ class AttentionMonitor:
                             cv2.putText(frame, "OLHO DETECTADO", (x + ex, y + ey - 10), 
                                         cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1)
 
+                cv2.putText(frame, "C: Trocar Camera", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
                 cv2.imshow(self.janela_feedback, frame)
                 try: cv2.setWindowProperty(self.janela_feedback, cv2.WND_PROP_TOPMOST, 1)
                 except: pass
@@ -104,26 +128,24 @@ class AttentionMonitor:
                     self.buffer_frames_perdidos += 1
                     if self.buffer_frames_perdidos >= self.frames_para_disparar:
                         if not video_ativo:
-                            # Calcula quanto tempo passou enquanto estava oculto
                             tempo_passado = (time.time() - self.time_when_hidden) * 1000
                             new_time = (self.last_video_time + tempo_passado) % self.video_duration
-                            
                             self.player.play()
                             self.player.set_time(int(new_time))
                             video_ativo = True
                 else:
                     self.buffer_frames_perdidos = 0
                     if video_ativo:
-                        # Salva o progresso e o momento atual antes de esconder
                         self.last_video_time = self.player.get_time()
                         self.time_when_hidden = time.time()
                         self.player.stop()
                         video_ativo = False
 
                 key = cv2.waitKey(1) & 0xFF
-                # Se apertar ESC (27) ou Q, sai do script totalmente
                 if key == ord('q') or key == 27: 
                     break
+                elif key == ord('c'):
+                    self.proxima_camera()
                     
         except KeyboardInterrupt: pass
         finally:
