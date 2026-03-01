@@ -23,28 +23,28 @@ class AttentionMonitor:
     def __init__(self):
         self.video_url = VIDEO_URL
         self.video_path = VIDEO_FILENAME
-        self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        # AGORA RASTREANDO OS OLHOS ESPECIFICAMENTE
+        self.eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
         
-        self.frames_para_disparar = 2 
+        self.frames_para_disparar = 3 # Aumentado um pouco para evitar falso-positivo em piscadas rápidas
         self.buffer_frames_perdidos = 0
         
         self.cap = None
-        self.janela_feedback = "Sua Camera (Feedback)"
+        self.janela_feedback = "Sua Camera (Olhos)"
         
-        # Inicializa o VLC com flags ultra silenciosas
+        # Inicializa o VLC
         vlc_flags = [
             "--quiet", 
             "--no-video-title-show", 
             "--no-xlib",
-            "--avcodec-hw=none" # Evita erros de aceleração de hardware VA-API/VDPAU no terminal
+            "--avcodec-hw=none" 
         ]
         self.instance = vlc.Instance(*vlc_flags)
         self.player = self.instance.media_player_new()
 
     def download_video(self):
         if not os.path.exists(self.video_path):
-            # Usamos stdout direto aqui pois redirecionamos stderr
-            sys.stdout.write("[*] Preparando recursos (Vídeo V2)...\n")
+            sys.stdout.write("[*] Preparando recursos...\n")
             sys.stdout.flush()
             try:
                 req = urllib.request.Request(self.video_url, headers={'User-Agent': 'Mozilla/5.0'})
@@ -82,9 +82,9 @@ class AttentionMonitor:
             pass
         
         sys.stdout.write("\n" + "="*40 + "\n")
-        sys.stdout.write(" MONITORAMENTO INTELIGENTE ATIVADO \n")
+        sys.stdout.write(" RASTREIO DE OLHOS ATIVADO (RÍGIDO) \n")
         sys.stdout.write("="*40 + "\n")
-        sys.stdout.write("[>] O vídeo só aparecerá se você desviar o olhar.\n")
+        sys.stdout.write("[>] Se você desviar o OLHAR ou fechar os olhos, o alerta dispara.\n")
         sys.stdout.write("[>] Pressione ESC ou Q para encerrar.\n\n")
         sys.stdout.flush()
         
@@ -98,17 +98,21 @@ class AttentionMonitor:
                     continue
 
                 frame = cv2.flip(frame, 1)
-                small_frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
-                gray = cv2.cvtColor(small_frame, cv2.COLOR_BGR2GRAY)
-                faces = self.face_cascade.detectMultiScale(gray, 1.1, 5, minSize=(30, 30))
+                # Mantemos o frame maior para detecção de olhos ser mais precisa
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                # Equalizar o histograma ajuda MUITO na detecção de olhos
+                gray = cv2.equalizeHist(gray)
+                
+                # Detecção de olhos (parâmetros ajustados para sensibilidade)
+                eyes = self.eye_cascade.detectMultiScale(gray, 1.3, 10, minSize=(30, 30))
 
-                olhando = len(faces) > 0
+                olhando = len(eyes) > 0
 
                 # Feedback Visual
                 frame_draw = frame.copy()
-                for (x, y, w, h) in faces:
-                    x, y, w, h = x*2, y*2, w*2, h*2
-                    cv2.rectangle(frame_draw, (x, y), (x+w, y+h), (0, 255, 0), 2)
+                for (ex, ey, ew, eh) in eyes:
+                    cv2.rectangle(frame_draw, (ex, ey), (ex+ew, ey+eh), (255, 0, 0), 2)
+                    cv2.putText(frame_draw, "OLHO DETECTADO", (ex, ey-10), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1)
                 
                 cv2.imshow(self.janela_feedback, frame_draw)
 
