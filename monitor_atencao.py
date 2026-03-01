@@ -3,9 +3,18 @@ import time
 import os
 import urllib.request
 import vlc
+import sys
 
-# Silencia logs do sistema
+# --- SILENCIADOR DE LOGS DO SISTEMA ---
+# Esconde avisos de Qt, VA-API, libva e drivers de vídeo
+os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.qpa.*=false"
+os.environ["QT_QPA_PLATFORM"] = "xcb" 
 os.environ["OPENCV_LOG_LEVEL"] = "OFF"
+os.environ["LIBVA_MESSAGING_LEVEL"] = "0"
+os.environ["VLC_VERBOSE"] = "-1"
+
+# Redireciona stderr para o limbo para silenciar mensagens de drivers que ignoram as variáveis acima
+sys.stderr = open(os.devnull, 'w')
 
 VIDEO_URL = "https://i.imgur.com/pwRPAsT.mp4"
 VIDEO_FILENAME = "video_alerta_v2.mp4"
@@ -22,19 +31,27 @@ class AttentionMonitor:
         self.cap = None
         self.janela_feedback = "Sua Camera (Feedback)"
         
-        # Inicializa o VLC
-        self.instance = vlc.Instance("--quiet", "--no-video-title-show")
+        # Inicializa o VLC com flags ultra silenciosas
+        vlc_flags = [
+            "--quiet", 
+            "--no-video-title-show", 
+            "--no-xlib",
+            "--avcodec-hw=none" # Evita erros de aceleração de hardware VA-API/VDPAU no terminal
+        ]
+        self.instance = vlc.Instance(*vlc_flags)
         self.player = self.instance.media_player_new()
 
     def download_video(self):
         if not os.path.exists(self.video_path):
-            print(f"[*] Preparando vídeo...")
+            # Usamos stdout direto aqui pois redirecionamos stderr
+            sys.stdout.write("[*] Preparando recursos (Vídeo V2)...\n")
+            sys.stdout.flush()
             try:
                 req = urllib.request.Request(self.video_url, headers={'User-Agent': 'Mozilla/5.0'})
                 with urllib.request.urlopen(req) as response, open(self.video_path, 'wb') as out_file:
                     out_file.write(response.read())
-            except Exception as e:
-                print(f"[!] Erro no download: {e}")
+            except Exception:
+                pass
 
     def iniciar_camera(self):
         for i in [1, 0, 2]:
@@ -49,7 +66,7 @@ class AttentionMonitor:
         self.cap = self.iniciar_camera()
         
         if not self.cap:
-            print("[!] Erro: Webcam não encontrada.")
+            sys.stdout.write("[!] Erro: Webcam não encontrada.\n")
             return
 
         media = self.instance.media_new(self.video_path)
@@ -64,8 +81,12 @@ class AttentionMonitor:
         except:
             pass
         
-        print("\n[+] Monitoramento Inteligente Ativado!")
-        print("[>] O vídeo só aparecerá se você desviar o olhar.")
+        sys.stdout.write("\n" + "="*40 + "\n")
+        sys.stdout.write(" MONITORAMENTO INTELIGENTE ATIVADO \n")
+        sys.stdout.write("="*40 + "\n")
+        sys.stdout.write("[>] O vídeo só aparecerá se você desviar o olhar.\n")
+        sys.stdout.write("[>] Pressione ESC ou Q para encerrar.\n\n")
+        sys.stdout.flush()
         
         video_ativo = False
         
@@ -110,7 +131,6 @@ class AttentionMonitor:
                 else:
                     self.buffer_frames_perdidos = 0
                     if video_ativo:
-                        # PARA o vídeo e ESCONDE a janela imediatamente ao olhar
                         self.player.stop()
                         video_ativo = False
 
@@ -127,6 +147,8 @@ class AttentionMonitor:
         if self.cap: self.cap.release()
         if self.player: self.player.stop()
         cv2.destroyAllWindows()
+        sys.stdout.write("\n[!] Monitoramento encerrado.\n")
+        sys.stdout.flush()
 
 if __name__ == "__main__":
     monitor = AttentionMonitor()
