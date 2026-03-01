@@ -91,6 +91,7 @@ class AttentionMonitor:
                 for (x, y, w, h) in faces:
                     cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
                     roi_gray = gray[y:y+h//2, x:x+w]
+                    roi_color = frame[y:y+h//2, x:x+w]
                     # Detecção de Olhos (Sensibilidade equilibrada)
                     eyes = self.eye_cascade.detectMultiScale(roi_gray, 1.1, 10, minSize=(25, 25))
                     
