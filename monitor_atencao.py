@@ -7,8 +7,8 @@ import vlc
 # Silencia logs do sistema
 os.environ["OPENCV_LOG_LEVEL"] = "OFF"
 
-VIDEO_URL = "https://i.imgur.com/5veSDuY.mp4"
-VIDEO_FILENAME = "video_alerta.mp4"
+VIDEO_URL = "https://i.imgur.com/pwRPAsT.mp4"
+VIDEO_FILENAME = "video_alerta_v2.mp4"
 
 class AttentionMonitor:
     def __init__(self):
@@ -23,17 +23,17 @@ class AttentionMonitor:
         self.janela_feedback = "Sua Camera (Feedback)"
         
         # Inicializa o VLC com flags de janelas flutuantes
-        # Retiramos o modo fullscreen nativo para evitar que ele cubra a outra janela
         self.instance = vlc.Instance("--quiet", "--no-video-title-show")
         self.player = self.instance.media_player_new()
 
     def download_video(self):
         if not os.path.exists(self.video_path):
-            print("[*] Preparando recursos...")
+            print(f"[*] Baixando novo vídeo de alerta (V2)...")
             try:
                 req = urllib.request.Request(self.video_url, headers={'User-Agent': 'Mozilla/5.0'})
                 with urllib.request.urlopen(req) as response, open(self.video_path, 'wb') as out_file:
                     out_file.write(response.read())
+                print("[+] Download V2 concluído!")
             except Exception as e:
                 print(f"[!] Erro no download: {e}")
 
@@ -66,8 +66,8 @@ class AttentionMonitor:
         except:
             pass
         
-        print("\n[+] Monitoramento iniciado!")
-        print("[>] Janela da camera flutuante ativa.")
+        print("\n[+] Monitoramento V2 iniciado!")
+        print("[>] O vídeo agora NÃO pausa quando você olha!")
         
         video_ativo = False
         
@@ -93,7 +93,7 @@ class AttentionMonitor:
                 
                 cv2.imshow(self.janela_feedback, frame_draw)
 
-                # Mantém a janelinha da camera sempre no topo a cada frame
+                # Mantém a janelinha da camera sempre no topo
                 try:
                     cv2.setWindowProperty(self.janela_feedback, cv2.WND_PROP_TOPMOST, 1)
                 except:
@@ -104,18 +104,17 @@ class AttentionMonitor:
                     if self.buffer_frames_perdidos >= self.frames_para_disparar:
                         if not video_ativo:
                             self.player.play()
-                            # Definimos o tamanho como "Semi Full" (ex: 1600x900)
-                            # Isso permite que ela apareça mas não bloqueie as camadas de sistema como o fullscreen real faz
                             video_ativo = True
-                        
-                        if self.player.get_state() == vlc.State.Ended:
-                            self.player.stop()
-                            self.player.play()
                 else:
                     self.buffer_frames_perdidos = 0
-                    if video_ativo:
-                        self.player.stop()
-                        video_ativo = False
+                    # NOTA: O vídeo NÃO para mais aqui quando você olha!
+                    # Ele continuará rodando até o fim ou até você fechar o script.
+                    pass
+
+                # Se o vídeo acabar, reinicia (loop infinito)
+                if self.player.get_state() == vlc.State.Ended:
+                    self.player.stop()
+                    self.player.play()
 
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord('q') or key == 27:
