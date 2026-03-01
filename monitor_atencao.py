@@ -24,6 +24,10 @@ class AttentionMonitor:
         self.camera_idx = 1
         self.janela_feedback = "FEEDBACK_MONITOR"
         
+        # Ajuste de Sensibilidade
+        self.buffer_perdidos = 0
+        self.limite_buffer = 5 # Precisa de 5 frames seguidos sem olhar para disparar
+        
         # Estado do Vídeo
         self.video_duration = 0
         self.last_pos = 0
@@ -87,13 +91,13 @@ class AttentionMonitor:
                 for (x, y, w, h) in faces:
                     cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
                     roi_gray = gray[y:y+h//2, x:x+w]
-                    # Detecção de Olhos (Rigorosa)
-                    eyes = self.eye_cascade.detectMultiScale(roi_gray, 1.1, 15, minSize=(20, 20))
+                    # Detecção de Olhos (Sensibilidade equilibrada)
+                    eyes = self.eye_cascade.detectMultiScale(roi_gray, 1.1, 10, minSize=(25, 25))
                     
                     if len(eyes) >= 2:
                         olhando = True
                         for (ex, ey, ew, eh) in eyes:
-                            cv2.rectangle(frame[y:y+h//2, x:x+w], (ex, ey), (ex+ew, ey+eh), (0, 0, 255), 2)
+                            cv2.rectangle(roi_color, (ex, ey), (ex+ew, ey+eh), (0, 0, 255), 2)
                             cv2.putText(frame, "OLHO", (x+ex, y+ey-5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
 
                 # Status na tela
@@ -102,16 +106,19 @@ class AttentionMonitor:
                 cv2.putText(frame, f"STATUS: {status_text}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2)
                 cv2.imshow(self.janela_feedback, frame)
 
-                # Logica do Vídeo (Tempo Real)
+                # Logica do Vídeo (Com Buffer de Sensibilidade)
                 if not olhando:
-                    if not self.is_playing:
-                        # Calcula onde o vídeo deveria estar
-                        elapsed = (time.time() - self.hide_time) * 1000
-                        jump_to = (self.last_pos + elapsed) % self.video_duration
-                        self.player.play()
-                        self.player.set_time(int(jump_to))
-                        self.is_playing = True
+                    self.buffer_perdidos += 1
+                    if self.buffer_perdidos >= self.limite_buffer:
+                        if not self.is_playing:
+                            # Calcula onde o vídeo deveria estar
+                            elapsed = (time.time() - self.hide_time) * 1000
+                            jump_to = (self.last_pos + elapsed) % self.video_duration
+                            self.player.play()
+                            self.player.set_time(int(jump_to))
+                            self.is_playing = True
                 else:
+                    self.buffer_perdidos = 0
                     if self.is_playing:
                         self.last_pos = self.player.get_time()
                         self.hide_time = time.time()
