@@ -88,13 +88,6 @@ class AttentionMonitor:
         cv2.namedWindow(self.janela_feedback, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(self.janela_feedback, 320, 240)
         
-        sys.stdout.write("\n" + "="*40 + "\n")
-        sys.stdout.write(" SISTEMA DE ATENÇÃO MAXIMIZADO \n")
-        sys.stdout.write("="*40 + "\n")
-        sys.stdout.write("[>] Sensibilidade aumentada! É necessário manter os 2 olhos na tela.\n")
-        sys.stdout.write("[>] C: Trocar Camera | ESC/Q: Sair\n\n")
-        sys.stdout.flush()
-        
         video_ativo = False
         
         try:
