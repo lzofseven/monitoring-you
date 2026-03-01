@@ -9,8 +9,8 @@ import sys
 os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.qpa.*=false"
 os.environ["QT_QPA_PLATFORM"] = "xcb" 
 os.environ["OPENCV_LOG_LEVEL"] = "OFF"
+os.environ["LIBVA_MESSAGING_LEVEL"] = "0"
 os.environ["VLC_VERBOSE"] = "-1"
-sys.stderr = open(os.devnull, 'w')
 
 VIDEO_URL = "https://i.imgur.com/pwRPAsT.mp4"
 VIDEO_FILENAME = "video_alerta_v2.mp4"
@@ -22,10 +22,8 @@ class AttentionMonitor:
         
         # Carrega os modelos (Haar Cascades)
         self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-        # eye_tree_eyeglasses costuma ser um pouco mais preciso para detectar se o olho está realmente aberto e focado
         self.eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye_tree_eyeglasses.xml')
         
-        # AUMENTO DE SENSIBILIDADE: De 2 para 1. Piscou ou virou, dispara mais rápido.
         self.frames_para_disparar = 1 
         self.buffer_frames_perdidos = 0
         
@@ -76,11 +74,9 @@ class AttentionMonitor:
 
     def run(self):
         self.download_video()
-        # Inicia com a primeira da lista
         self.cap = self.iniciar_camera(self.camera_indices[self.idx])
         
         if not self.cap:
-            # Tenta as outras se a primeira falhar
             for _ in range(len(self.camera_indices)):
                 if self.proxima_camera(): break
         
@@ -93,6 +89,8 @@ class AttentionMonitor:
         time.sleep(0.5)
         self.video_duration = self.player.get_length()
         self.player.stop()
+        # Reset should_stop pois o stop() acima dispara o evento
+        self.should_stop = False
         
         cv2.namedWindow(self.janela_feedback, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(self.janela_feedback, 320, 240)
@@ -110,7 +108,6 @@ class AttentionMonitor:
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 gray = cv2.equalizeHist(gray)
 
-                # Detecção do rosto mais rigorosa (minNeighbors=5 evita falsos rostos)
                 faces = self.face_cascade.detectMultiScale(gray, 1.1, 5, minSize=(100, 100))
                 olhando = False
                 
@@ -119,12 +116,8 @@ class AttentionMonitor:
                     roi_gray = gray[y:y+h//2, x:x+w]
                     roi_color = frame[y:y+h//2, x:x+w]
                     
-                    # Detecção dos olhos muito mais RÍGIDA
-                    # minNeighbors alto (ex: 12) significa que o algoritmo tem que ter MUITA certeza
-                    # que é um olho de frente. Se você olhar de lado, ele perde a certeza e dispara.
                     eyes = self.eye_cascade.detectMultiScale(roi_gray, 1.1, 12, minSize=(25, 25))
                     
-                    # EXIGE que os dois olhos estejam perfeitamente visíveis
                     if len(eyes) >= 2:
                         olhando = True
                         for (ex, ey, ew, eh) in eyes:
@@ -132,7 +125,6 @@ class AttentionMonitor:
                             cv2.putText(frame, "OLHO DETECTADO", (x + ex, y + ey - 10), 
                                         cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1)
 
-                # Informações na tela
                 cv2.putText(frame, "C: Trocar Camera", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
                 
                 if olhando:
