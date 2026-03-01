@@ -21,7 +21,6 @@ class AttentionMonitor:
         self.video_url = VIDEO_URL
         self.video_path = VIDEO_FILENAME
         
-        # Carrega detectores de Rosto e Olhos
         self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
         self.eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
         
@@ -31,9 +30,17 @@ class AttentionMonitor:
         self.cap = None
         self.camera_indices = [1, 0, 2, 3, 4]
         self.idx = 0
-        self.janela_feedback = "Sua Camera (Vigilante)"
+        self.janela_feedback = "FEEDBACK_CAMERA"
         
-        vlc_flags = ["--quiet", "--no-video-title-show", "--no-xlib", "--avcodec-hw=none"]
+        # Flags do VLC para Janela Semi-Full e comportada
+        vlc_flags = [
+            "--quiet", 
+            "--no-video-title-show", 
+            "--no-xlib",
+            "--no-video-on-top", # Garante que o VLC NÃO tente ficar por cima
+            "--width=1600",      # Tamanho Semi-Full
+            "--height=900"
+        ]
         self.instance = vlc.Instance(*vlc_flags)
         self.player = self.instance.media_player_new()
 
@@ -69,15 +76,15 @@ class AttentionMonitor:
         media = self.instance.media_new(self.video_path)
         self.player.set_media(media)
         
+        # Cria a janela da câmera
         cv2.namedWindow(self.janela_feedback, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(self.janela_feedback, 320, 240)
         
         sys.stdout.write("\n" + "="*40 + "\n")
-        sys.stdout.write(" MODO VIGILANTE MÁXIMO ATIVADO \n")
+        sys.stdout.write(" MONITORAMENTO VIGILANTE ATIVADO \n")
         sys.stdout.write("="*40 + "\n")
-        sys.stdout.write("[>] Detecção: Rosto Frontal + Olhos\n")
-        sys.stdout.write("[>] Se você desviar o rosto OU o olhar, o vídeo toca.\n")
-        sys.stdout.write("[>] Teclas: C (Camera), ESC/Q (Sair)\n\n")
+        sys.stdout.write("[>] Janela do vídeo em modo Semi-Full.\n")
+        sys.stdout.write("[>] Camera sempre por cima.\n\n")
         sys.stdout.flush()
         
         video_ativo = False
@@ -89,33 +96,27 @@ class AttentionMonitor:
 
                 frame = cv2.flip(frame, 1)
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                gray = cv2.equalizeHist(gray) # Melhora detecção em luz ruim
+                gray = cv2.equalizeHist(gray)
 
-                # 1. Procura o ROSTO primeiro (tem que ser de frente)
+                # Detecção Rosto + Olhos
                 faces = self.face_cascade.detectMultiScale(gray, 1.1, 6, minSize=(100, 100))
-                
                 olhando = False
                 
                 for (x, y, w, h) in faces:
-                    # Desenha o rosto no feedback
                     cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
-                    
-                    # 2. Dentro do ROSTO, procura os OLHOS
-                    roi_gray = gray[y:y+h//2, x:x+w] # Só olha na metade superior do rosto
-                    roi_color = frame[y:y+h//2, x:x+w]
-                    
+                    roi_gray = gray[y:y+h//2, x:x+w]
                     eyes = self.eye_cascade.detectMultiScale(roi_gray, 1.1, 10, minSize=(20, 20))
-                    
-                    if len(eyes) >= 2: # Exige detectar os dois olhos para ser mais rigoroso
+                    if len(eyes) >= 2:
                         olhando = True
                         for (ex, ey, ew, eh) in eyes:
-                            cv2.rectangle(roi_color, (ex, ey), (ex+ew, ey+eh), (255, 0, 0), 2)
+                            cv2.rectangle(frame[y:y+h//2, x:x+w], (ex, ey), (ex+ew, ey+eh), (255, 0, 0), 2)
 
-                # Feedback Visual
-                cv2.putText(frame, "C: Trocar Camera", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                # EXIBE A CÂMERA
                 cv2.imshow(self.janela_feedback, frame)
-
-                try: cv2.setWindowProperty(self.janela_feedback, cv2.WND_PROP_TOPMOST, 1)
+                
+                # FORÇA A JANELA DA CÂMERA FICAR NO TOPO (A cada frame)
+                try:
+                    cv2.setWindowProperty(self.janela_feedback, cv2.WND_PROP_TOPMOST, 1)
                 except: pass
 
                 if not olhando:
@@ -124,6 +125,7 @@ class AttentionMonitor:
                         if not video_ativo:
                             self.player.play()
                             video_ativo = True
+                        
                         if self.player.get_state() == vlc.State.Ended:
                             self.player.stop(); self.player.play()
                 else:
